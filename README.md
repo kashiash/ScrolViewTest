@@ -187,7 +187,300 @@ struct ScrollClipDisableDemo: View {
 }
 ```
 
+scrollTargetLayout
 
+Ten modyfikator jest używany w połączeniu z scrollTargetBehavior(mode: ViewAlignedScrollTargetBehavior) lub scrollPosition(id:), które zostaną omówione poniżej.
+
+Ten modyfikator powinien być zastosowany do kontenerów układu w ScrollView, które zawierają główną powtarzającą się zawartość, taką jak LazyHStack lub VStack.
+
+```swift
+@State private var isEnabled = true
+
+ScrollView {
+    LazyVStack {
+        ForEach(items) { item in
+            CellView(width: 200, height: 140)
+                .idView(item.n)
+        }
+    }
+    .scrollTargetLayout(isEnabled: isEnabled)
+}
+```
+
+scrollPosition(initialAnchor:)
+
+Używając tego modyfikatora, możesz określić punkt kotwiczenia początkowo widocznej części zawartości ScrollView. Ma to wpływ tylko na początkowy stan ScrollView i jest ustawiane raz. Jest zwykle stosowany do scenariuszy takich jak pokazywanie danych od dołu w aplikacjach IM lub wyświetlanie danych od końca. Możesz ustawić początkową pozycję dla obu osi jednocześnie za pomocą UnitPoint.
+
+```swift
+struct ScrollPositionInitialAnchorDemo: View {
+    @State private var show = false
+    @State private var position: Position = .leading
+    var body: some View {
+        VStack {
+            Toggle("Pokaż", isOn: $show)
+            Picker("Pozycja", selection: $position) {
+                ForEach(Position.allCases) { p in
+                    Text(p.rawValue).tag(p)
+                }
+            }
+            .pickerStyle(.segmented)
+            if show {
+                ScrollView(.horizontal) {
+                    LazyHStack {
+                        ForEach(0 ..< 10000) { i in
+                            CellView(debugInfo: "\(i)")
+                                .idView(i)
+                        }
+                    }
+                }
+                .scrollPosition(initialAnchor: position.unitPoint)
+            }
+        }
+        .padding()
+    }
+
+    enum Position: String, Identifiable, CaseIterable {
+        var id: UnitPoint { unitPoint }
+        case leading, center, trailing
+        var unitPoint: UnitPoint {
+            switch self {
+            case .leading:
+                .leading
+            case .center:
+                .center
+            case .trailing:
+                .trailing
+            }
+        }
+    }
+}
+```
+
+## scrollPosition(id:)
+
+Używając tego modyfikatora, ScrollView może przewinąć się do określonej pozycji. Można go uznać za uproszczoną wersję ScrollViewReader.
+
+    Dotyczy tylko ScrollView
+    Gdy źródło danych w ForEach implementuje protokół Identifiable, nie ma potrzeby jawnego ustawiania identyfikatora za pomocą modyfikatora id.
+    Gdy używany jest w połączeniu z scrollTargetLayout, można uzyskać aktualną pozycję przewijania (identyfikator widoku)
+    Nie obsługuje ustawiania punktu kotwiczenia, a punkt kotwiczenia jest ustalony na środek podwidoku
+    Jak wspomniano w artykule "Demystifying SwiftUI List Responsiveness: Best Practices for Large Datasets", mogą wystąpić problemy wydajnościowe, gdy zbiór danych jest duży.
+
+```swift
+struct ScrollPositionIDDemo: View {
+    @State private var show = false
+    @State private var position: Position = .trailing
+    @State private var items = (0 ..< 500).map {
+        Item(n: $0)
+    }
+
+    @State private var id: UUID?
+    var body: some View {
+        VStack {
+            Picker("Position", selection: $position) {
+                ForEach(Position.allCases) { p in
+                    Text(p.rawValue).tag(p)
+                }
+            }
+            .pickerStyle(.segmented)
+            Text(id?.uuidString ?? "").fixedSize().font(.caption2)
+            ScrollView(.horizontal) {
+                LazyHStack {
+                    ForEach(items) { item in
+                        CellView(debugInfo: "\(item.n)")
+                            .idView(item.n)
+                    }
+                }
+            }
+            .scrollPosition(id: $id)
+            .scrollTargetLayout()
+        }
+        .animation(.default, value: id)
+        .padding()
+        .frame(height: 300)
+        .task(id: position) {
+            switch position {
+            case .leading:
+                id = items.first!.id
+            case .center:
+                id = items[250].id
+            case .trailing:
+                id = items.last!.id
+            }
+        }
+    }
+}
+```
+
+```
+ScrollViewReader { proxy in
+    ScrollView(.horizontal) {
+        LazyHStack {
+            ForEach(items) { item in
+                CellView(debugInfo: "\(item.n)")
+                    .idView(item.n)
+                    .id(item.id)
+            }
+        }
+    }
+    .task(id: position) {
+        switch position {
+        case .leading:
+            proxy.scrollTo(items.first!.id)
+        case .center:
+            proxy.scrollTo(items[250].id)
+        case .trailing:
+            proxy.scrollTo(items.last!.id)
+        }
+    }
+}
+```
+
+ScrollViewReader jest wykorzystywany w celu odczytu pozycji i przewijania ScrollView. W tym przypadku tworzony jest ScrollView z układem HStack, zawierający widoki CellView dla każdego elementu w kolekcji "items". Każdy widok ma przypisaną unikalną wartość identyfikatora za pomocą metody idView(). Metoda task() jest wykorzystywana do zdefiniowania zadania, które zostanie wykonane po zmianie wartości zmiennej "position". W zależności od wartości "position", ScrollView zostanie przewinięte do odpowiedniego widoku na podstawie przypisanego identyfikatora.
+
+
+
+```
+scrollTargetBehavior
+
+scrollTargetBehavior służy do ustawienia zachowania przewijania ScrollView: paginacji lub wyrównania do widoków podrzędnych.
+
+Użycie .scrollTargetBehavior(.paging) powoduje, że ScrollView przewija się stronami, przewijając po jednej stronie na raz (czyli rozmiar widoczny ScrollView).
+
+LazyVStack {
+    ForEach(items) { item in
+        CellView(width: 200, height: 140)
+            .idView(item.n)
+    }
+}
+.scrollTargetBehavior(.paging)
+```
+
+scrollTargetBehavior jest wykorzystywany do kontrolowania zachowania przewijania ScrollView. W powyższym przykładzie tworzony jest LazyVStack zawierający widoki CellView dla każdego elementu w kolekcji "items". Używając .scrollTargetBehavior(.paging), ScrollView przewija się stronami, przewijając po jednej stronie na raz, gdzie rozmiar strony odpowiada widocznej części ScrollView.
+
+
+Gdy ustawione jest `.scrollTargetBehavior(.viewAligned)`, należy użyć również `scrollTargetLayout` w połączeniu z tym. Po zatrzymaniu przewijania, górna część kontenera zostanie wyrównana z górną częścią widoku podrzędnego (w trybie pionowym). Deweloperzy mogą kontrolować włączanie i wyłączanie `scrollTargetLayout`, aby przełączać zachowanie `viewAligned`.
+
+```swift
+struct ScrollTargetBehaviorDemo: View {
+    @State var items = (0 ..< 100).map { Item(n: $0) }
+    @State private var isEnabled = true
+    var body: some View {
+        VStack {
+            Toggle("Layout enable", isOn: $isEnabled).padding()
+            ScrollView {
+                LazyVStack {
+                    ForEach(items) { item in
+                        CellView(width: 200, height: 95)
+                            .idView(item.n)
+                    }
+                }
+                .scrollTargetLayout(isEnabled: isEnabled)
+            }
+            .border(.red, width: 2)
+        }
+        .scrollTargetBehavior(.viewAligned)
+        .frame(height: 300)
+        .padding()
+    }
+}
+```
+
+W powyższym przykładzie tworzony jest ScrollView z LazyVStack zawierającym widoki CellView dla każdego elementu w kolekcji "items". Poprzez ustawienie `.scrollTargetBehavior(.viewAligned)` i użycie `scrollTargetLayout` w LazyVStack, po zatrzymaniu przewijania, górna część kontenera zostanie wyrównana z górną częścią widoku podrzędnego. Deweloperzy mogą kontrolować włączanie i wyłączanie `scrollTargetLayout` przy użyciu przełącznika Toggle.
+
+
+With .scrollTargetBehavior(.viewAligned(limitBehavior:)), we can define the mechanism for aligning the scroll target behavior.
+
+    .automatic is the default behavior, limited in compact horizontal size classes, otherwise unlimited.
+    .always always limits the number of scrollable views.
+    .never does not limit the number of scrollable views.
+
+With ViewAlignedScrollTargetBehavior, developers can also override the scrolling position of the scroll view based on the system-provided target (implementation details have not been studied in detail yet).
+NamedCoordinateSpace.scrollView
+
+Apple introduced the NamedCoordinateSpace type in SwiftUI 5, which allows users to name coordinate systems and provides a preset .scrollView coordinate system (only supported by ScrollView). With this coordinate system, developers can easily obtain the positional relationship between subviews and the scroll view. Using this information, we can easily achieve many effects, especially when combined with another new API, the visualEffect modifier.
+
+struct CoordinatorDemo: View {
+    var body: some View {
+        ScrollView {
+            ForEach(0 ..< 30) { _ in
+                CellView()
+                    .overlay(
+                        GeometryReader { proxy in
+                            if let distanceFromTop = proxy.bounds(of: .scrollView)?.minY {
+                                Text(distanceFromTop * -1, format: .number)
+                            }
+                        }
+                    )
+            }
+        }
+        .border(.blue)
+        .contentMargins(30, for: .scrollContent)
+    }
+}
+
+Unlike the coordinate system set with .coordinateSpace(.named("MyScrollView")), the default .scrollViewcoordinate system can correctly handle margins created with contentMargins.
+
+ScrollView {
+    ForEach(0 ..< 30) { _ in
+        CellView()
+            .overlay(
+                GeometryReader { proxy in
+                    if let distanceFromTop = proxy.bounds(of: .named("MyScrollView"))?.minY {
+                        Text(distanceFromTop * -1, format: .number)
+                    }
+                }
+            )
+    }
+}
+.border(.blue)
+.contentMargins(30, for: .scrollContent)
+// margin not recognized
+.coordinateSpace(.named("MyScrollView"))
+
+
+
+`bounds(of coordinateSpace: NamedCoordinateSpace) -> CGRect?` to nowo dodane API w tym roku, służące do pobierania prostokąta granicznego określonej przestrzeni współrzędnych.
+scrollTransition
+
+Faktycznie, w wielu scenariuszach nie potrzebujemy bardzo precyzyjnych relacji pozycji za pomocą NamedCoordinateSpace.scrollView. Apple udostępnia nam inne API, które upraszczają ten proces.
+
+Kiedy podwidok przesuwa się do i z obszaru widocznego przewijanego kontenera, scrollTransition stosuje podaną animację przejścia do widoku i płynnie przechodzi między różnymi etapami.
+
+Obecnie zdefiniowane są trzy stany fazowe (Phase):
+
+    topLeading: Widok przesuwa się do obszaru widocznego kontenera przewijanego
+    identity: Oznacza, że widok jest obecnie w obszarze widocznym
+    bottomTrailing: Widok przesuwa się poza obszar widocznego kontenera przewijanego
+
+Zamykające przekształcenie (transition closure) scrollTransition wymaga zwrócenia typu, który jest zgodny z protokołem VisualEffect (protokół VisualEffect definiuje typ efektu, który nie wpływa na układ widoku, a Apple umożliwia wiele modyfikatorów zgodnych z tym protokołem).
+
+```swift
+struct ScrollTransitionDemo: View {
+    @State var clip = false
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            ScrollView {
+                ForEach(0 ..< 30) { i in
+                    CellView()
+                        .idView(i)
+                        .scrollTransition(.animated) { content, phase in
+                            content
+                                .scaleEffect(phase != .identity ? 0.6 : 1)
+                                .opacity(phase != .identity ? 0.3 : 1)
+                        }
+                }
+            }
+            .frame(height: 300)
+            .scrollClipDisabled(clip)
+            Toggle("Clip", isOn: $clip)
+                .padding(16)
+        }
+    }
+}
+```
+
+W powyższym przykładzie tworzony jest ScrollView zawierający wiele widoków CellView. Używając `.scrollTransition(.animated)` i dostarczając zamknięcie (transition closure), można płynnie animować widoki podczas ich przesuwania wewnątrz obszaru widocznego ScrollView. Zamknięcie otrzymuje widok zawierający i fazę (Phase) przesunięcia widoku i zwraca modyfikowany widok na podstawie fazy. Dodatkowo, można użyć `.scrollClipDisabled(clip)` do włączania lub wyłączania przycinania (clipping) widoku ScrollView.
 
 extra 1:
 
